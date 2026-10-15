@@ -1,0 +1,5 @@
+# entornos virtuales de las apps (cada uno pesa cientos de MB)
+.venv*/
+venv/
+__pycache__/
+*.pyc
