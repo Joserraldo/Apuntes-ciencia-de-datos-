@@ -1,13 +1,11 @@
 # --- App Streamlit (ejecución) ---
-tensorflow>=2.11
+tensorflow>=2.16
 keras>=3
 streamlit>=1.40
 pillow
 numpy
 pandas
 
-# --- Solo necesario si quieres REPRODUCIR el entrenamiento desde cero
-#     (el cuaderno instala imgaug en una celda; sirve con NumPy 2.x gracias al parche del cuaderno)
-# imgaug==0.4.0
-# scikit-learn
-# matplotlib
+# --- Solo para reentrenar (cuaderno / entrenar_modelo.py) ---
+# matplotlib                       # figuras del cuaderno
+# torch                            # con CUDA: entrena en la GPU (Keras usa el backend de PyTorch)

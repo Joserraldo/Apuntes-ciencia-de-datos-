@@ -2,8 +2,8 @@
 """
 Validación rápida del modelo guardado (antes de desplegar en Streamlit).
 
-Comprueba que el .keras carga, que entrega 72 salidas coherentes y que los puntos
-NO colapsan en un solo sitio (el síntoma que tenía el modelo original).
+Comprueba que el .keras carga, que entrega 24 mapas de calor de 56×56 y que los puntos
+NO colapsan en un solo sitio. Sale con código 1 si algo falla (sirve en CI).
 
 Uso:
     python test_prediccion.py
@@ -27,8 +27,8 @@ def main():
     modelo = cargar_modelo(MODEL_PATH)
     print(f"[1] Modelo cargado: {os.path.basename(MODEL_PATH)} "
           f"({os.path.getsize(MODEL_PATH) / 1e6:.1f} MB)")
-    print(f"    salidas del modelo: {modelo.output_shape[-1]} "
-          f"(48 coordenadas + 24 visibilidades)")
+    print(f"    salida del modelo: {modelo.output_shape[1:]} (24 mapas de calor)")
+    assert tuple(modelo.output_shape[1:]) == (56, 56, 24), "la salida debe ser 56×56×24"
 
     os.makedirs(os.path.join(BASE, "resultados"), exist_ok=True)
     ok = True

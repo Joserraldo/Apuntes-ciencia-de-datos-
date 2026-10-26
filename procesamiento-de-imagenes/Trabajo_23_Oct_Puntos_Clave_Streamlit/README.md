@@ -1,178 +1,161 @@
-# 🐕 Detección de puntos clave en perros — cuaderno + app Streamlit
+# 🐕 Detección de puntos clave en perros — Trabajo del viernes 23 de octubre
 
-**Trabajo — viernes 23 de octubre de 2026**
-**Asignatura:** Ciencia de Datos · Procesamiento de Imágenes (curso avanzado)
-**Autor:** José Alejandro Téllez Prada
+**Ciencia de Datos · Procesamiento de Imágenes (avanzado)** · Autor: José Alejandro Téllez Prada
 
-<p>
-<img alt="Python" src="https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white">
-<img alt="TensorFlow" src="https://img.shields.io/badge/TensorFlow-2.20-FF6F00?logo=tensorflow&logoColor=white">
-<img alt="Keras" src="https://img.shields.io/badge/Keras-3-D00000?logo=keras&logoColor=white">
-<img alt="Streamlit" src="https://img.shields.io/badge/Streamlit-1.51-FF4B4B?logo=streamlit&logoColor=white">
-<img alt="Dataset" src="https://img.shields.io/badge/dataset-StanfordExtra-4B5563">
-</p>
+Localiza **24 puntos anatómicos** de un perro (patas, orejas, ojos, nariz, cola…) en una foto y dibuja un
+contorno que bordea la silueta. Parte del cuaderno `Avanzada_Cuaderno_9D_Deteccion_puntos_clave2.ipynb`
+(aprendizaje por transferencia con **MobileNetV2**), que entrena el modelo y lo guarda; la app de **Streamlit**
+carga ese modelo y hace las predicciones.
 
-![App Streamlit](resultados/app_streamlit.png)
+![App](resultados/app_streamlit.png)
 
----
-
-## 🎯 Qué es
-
-Un detector de **24 puntos anatómicos** (keypoints) en imágenes de perros, entrenado con
-**aprendizaje por transferencia** (MobileNetV2 preentrenado en ImageNet) y desplegado en una
-app de **Streamlit** que, además de los puntos, dibuja un **contorno azul** con la silueta
-estimada del animal.
-
-```
-Imagen 224×224×3
-   → preprocess_input (MobileNetV2)
-   → MobileNetV2 · ImageNet · último bloque entrenable
-   → Dropout(0.3)
-   → SeparableConv2D(72, 5×5, ReLU)
-   → SeparableConv2D(72, 3×3, Sigmoid)      → 1×1×72
-        ├── 48 coordenadas  (24 puntos × x, y) en [0, 1]
-        └── 24 visibilidades (¿se ve el punto?)
-```
-
-![Predicciones](resultados/figura_predicciones.png)
+> ⚠️ **Es una demostración del pipeline, no un detector de producción.** Se entrenó con la muestra pública de
+> StanfordExtra: **25 imágenes de 4 razas**. Funciona en perros parecidos a los de la muestra y falla con
+> perros muy distintos. Ver [Limitaciones](#-limitaciones-y-siguientes-pasos).
 
 ---
 
-## 📊 Resultados (25 imágenes de muestra, puntos visibles)
+## 📊 Resultados (medidos en imágenes que el modelo NO vio)
 
-| Métrica | Cuaderno original (5 épocas) | Reentrenado |
-|---|---|---|
-| Error medio vs. anotación real | 27,44 % de la imagen | **7,94 %** |
-| Error mediano | 25,95 % | **7,32 %** |
-| Dispersión del esqueleto | 0,33 % → todos los puntos en un píxel | **31,27 %** |
-| Acierto de visibilidad (20 puntos anotados) | — | **100 %** |
-| Pérdida final | 0,095 | **0,00058** |
+Validación cruzada de 5 pliegues: se entrena 5 veces dejando fuera 5 imágenes distintas y el error se mide
+**solo en las imágenes que quedaron fuera**. Error = distancia media entre el punto predicho y el real, en %
+del tamaño de la imagen (solo puntos anotados). La referencia es predecir siempre la **pose media**.
 
-> El modelo original **no localizaba nada**: predecía el promedio del dataset y los 24 puntos
-> se dibujaban uno encima de otro (de ahí que la app pareciera "no bordear" al perro).
-> El diagnóstico completo está en el **Paso 15 del cuaderno**.
-
-![Comparación](resultados/figura_comparacion.png)
-
-*(original · predicción · anotación real)*
-
----
-
-## 📁 Contenido de la carpeta
-
-| Archivo | Qué es |
+| | Error en imágenes no vistas |
 |---|---|
-| `Avanzada_Cuaderno_9D_Deteccion_puntos_clave2.ipynb` | Cuaderno del trabajo: material del curso ejecutado + diagnóstico + mejoras + resultados |
-| `app_streamlit.py` | Aplicación de despliegue (interfaz, controles, descargas) |
-| `puntos_clave.py` | Núcleo reutilizable: inferencia, envolvente/contorno, dibujo con anti-aliasing |
-| `modelos/modelo_puntos_clave.keras` | Modelo entrenado (10,1 MB, Keras 3) |
-| `entrenar_modelo.py` | Reentrenamiento reproducible (~4 min en CPU) |
-| `evaluar_modelo.py` | Métricas por imagen + figuras en `resultados/` |
-| `test_prediccion.py` | Verifica que el modelo carga y que los puntos **no** colapsan |
-| `test_app.py` | Prueba E2E de la app con `streamlit.testing` |
-| `muestras/` | 3 fotos para probar la app con un clic |
-| `resultados/` | Figuras, métricas y captura de la app |
-| `requirements.txt` | Dependencias |
+| Pose media (referencia trivial) | **19,1 %** |
+| **Este modelo (mapas de calor)** | **8,7 %** (por pliegue: 10,7 · 7,7 · 8,0 · 10,3 · 6,9) |
+| Mismas imágenes de entrenamiento (no es generalización) | 2,2 % |
 
-> El dataset descargado (`StanfordExtra-master/`) no se versiona (ver `.gitignore`).
+Otras cifras: acierto de visibilidad 77 % · modelo de 5,4 M de parámetros (22 MB) · entrenar los 5 pliegues
+y el modelo final toma ≈ 15 min en una RTX 4060.
+
+Predicciones sobre imágenes **no vistas** (aro verde = anotación real, punto = predicción):
+
+![No vistas](resultados/predicciones_no_vistas.png)
+
+Detalle en [`resultados/validacion_cruzada.json`](resultados/validacion_cruzada.json) y
+[`resultados/validacion_cruzada.png`](resultados/validacion_cruzada.png).
 
 ---
 
-## 🚀 Cómo ejecutarlo
+## 🧠 Cómo funciona
+
+```
+Imagen 224×224×3 (uint8)
+  → preprocess_input (MobileNetV2)
+  → MobileNetV2 · ImageNet           (último bloque entrenable, BatchNorm congelado)   → 7×7×1280
+  → 3 × [Conv2DTranspose(128, 4, stride 2) → BatchNorm → ReLU]                         → 56×56×128
+  → Conv2D 1×1 (24)                                                                    → 56×56×24
+```
+
+* **Un mapa de calor por punto.** La posición del punto es el pico del mapa (refinada con un centroide local) y
+  la **altura del pico** es la confianza de que el punto se vea. Los puntos con pico bajo (umbral 0,19, calibrado
+  por validación cruzada) se dibujan como anillos tenues y no entran en el contorno.
+* **Pérdida:** error cuadrático entre el mapa predicho y una gaussiana centrada en el punto real; el pico pesa
+  30 veces más que el fondo y los puntos no anotados casi no cuentan.
+* **Contorno:** no es una máscara de segmentación; es la envolvente convexa de los puntos visibles, suavizada
+  con el algoritmo de Chaikin.
+* **Datos:** en la muestra, los puntos 20-23 (ojos, cruz y garganta) **nunca vienen anotados**; el modelo no tiene
+  señal para ellos y la app los dibuja como anillos.
+
+---
+
+## 🛠️ Qué se corrigió respecto a la primera versión
+
+La primera versión de este trabajo daba predicciones que no seguían al perro. Auditoría y causas:
+
+| Problema | Efecto | Corrección |
+|---|---|---|
+| Regresión directa de 48 coordenadas tras un pooling global | En imágenes no vistas el error era ≈ 20 %, igual que predecir la pose media: no localizaba | **Mapas de calor** |
+| El cuaderno entrenaba 25 pasos y **no guardaba el modelo**; el modelo de la app salía de otro script distinto | El cuaderno y la app no eran consistentes | El cuaderno es ahora la fuente: entrena, valida y guarda el modelo |
+| El error del README (7,9 %) se calculó sobre las mismas 25 imágenes de entrenamiento | Cifra optimista, sin valor de generalización | Validación cruzada: la cifra es 8,7 % **en imágenes no vistas** |
+| Volteo horizontal sin intercambiar izquierda/derecha | Etiquetas contradictorias en parte de los datos | El volteo intercambia las etiquetas |
+| Puntos no anotados entrenados como (0, 0) | Arrastraban las predicciones a la esquina | Mapa en cero y peso casi nulo |
+| Aumento que saca un punto del cuadro seguía contando como visible | Ruido de etiquetas | Se marca como no visible |
+| BatchNorm entrenable con lotes pequeños | Desajuste entrenamiento/inferencia | BatchNorm del backbone en modo inferencia |
+| La app no corregía la orientación EXIF | Fotos de celular llegaban rotadas al modelo | `ImageOps.exif_transpose` |
+| Pruebas sin aserciones (`test_app.py`) o que salían con código 0 ante un error | Pasaban aunque fallaran | Aserciones y código de salida 1 |
+
+---
+
+## 🚀 Uso
+
+### Ejecutar la app
 
 ```bash
 pip install -r requirements.txt
 streamlit run app_streamlit.py
 ```
 
-Abre `http://localhost:8501`, elige una imagen de muestra (o sube una foto) y la app devuelve
-los 24 puntos con su contorno, la tabla de coordenadas y descargas en PNG/CSV.
+Abre `http://localhost:8501`. El modelo (22 MB) ya viene en `modelos/`: no hace falta entrenar para probarla.
+Se puede elegir una de las 3 muestras o subir una foto propia, activar/desactivar el contorno, numerar los puntos
+y descargar la imagen anotada (PNG) y las coordenadas (CSV).
 
-### Reentrenar y evaluar
+### Reentrenar el modelo
+
+* **Cuaderno** (recomendado): abre `Avanzada_Cuaderno_9D_Deteccion_puntos_clave2.ipynb` y ejecútalo completo.
+  Funciona en **Google Colab con GPU** (descarga solo la muestra de StanfordExtra) o en local.
+* **Script equivalente:** `python entrenar_modelo.py` hace lo mismo sin Jupyter (`--rapido` para una prueba de humo).
+
+**GPU:** TensorFlow en Windows nativo ya no usa la GPU. Con **PyTorch** instalado (con CUDA) el cuaderno y el
+script entrenan en la GPU automáticamente: Keras 3 usa el backend de PyTorch y el `.keras` resultante lo carga la
+app con cualquier backend. En CPU, los 5 pliegues + modelo final tardan ≈ 1 h.
+
+### Evaluar y probar
 
 ```bash
-python entrenar_modelo.py     # deja el modelo en modelos/
-python evaluar_modelo.py      # métricas + figuras en resultados/
-python test_prediccion.py     # sanity check del modelo guardado
-python test_app.py            # prueba E2E de la app
+python evaluar_modelo.py     # figuras sobre las 25 imágenes de entrenamiento (referencia, no mide generalización)
+python test_prediccion.py    # el modelo carga, devuelve 56×56×24 y los puntos no colapsan (código 1 si falla)
+python test_app.py           # prueba de extremo a extremo de la app con streamlit.testing
 ```
 
-> `entrenar_modelo.py` y `evaluar_modelo.py` necesitan la carpeta `StanfordExtra-master/`,
-> que el cuaderno descarga automáticamente (no se versiona porque pesa).
+---
+
+## 📁 Estructura
+
+```
+Trabajo_23_Oct_Puntos_Clave_Streamlit/
+├── Avanzada_Cuaderno_9D_Deteccion_puntos_clave2.ipynb   # entrena, valida y guarda el modelo (ejecutado)
+├── app_streamlit.py          # interfaz Streamlit
+├── puntos_clave.py           # inferencia, contorno y dibujo (reutilizable)
+├── entrenar_modelo.py        # mismo entrenamiento que el cuaderno, por línea de comandos
+├── evaluar_modelo.py         # figuras sobre la muestra
+├── test_prediccion.py · test_app.py
+├── modelos/modelo_puntos_clave.keras
+├── muestras/                 # 3 fotos de ejemplo
+├── resultados/               # validación cruzada, figuras y capturas
+└── requirements.txt
+```
+
+`puntos_clave.py` se puede usar desde cualquier script:
+
+```python
+from PIL import Image
+from puntos_clave import cargar_modelo, predecir, dibujar
+
+modelo = cargar_modelo("modelos/modelo_puntos_clave.keras")
+img = Image.open("muestras/rhodesian_1.jpg").convert("RGB")
+kps, vis = predecir(modelo, img)     # (24, 2) en [0,1]  y  (24,) de confianza de visibilidad
+dibujar(img, kps, vis=vis).save("salida.png")
+```
 
 ---
 
-## 🧠 Qué se corrigió respecto al cuaderno base
+## ⚠️ Limitaciones y siguientes pasos
 
-El cuaderno del curso es correcto como material didáctico, pero tal cual entrena un modelo
-que no sirve para desplegar. Los cuatro arreglos, con su justificación:
+* **Solo 25 imágenes de 4 razas** (Rhodesian ridgeback, Weimaraner, Border terrier, Golden retriever). El error de
+  8,7 % es la cifra honesta con ese dato, pero cada pliegue tiene solo 5 imágenes y la estimación es ruidosa.
+* **Perros muy distintos o poses raras** (cachorros, perros acostados de espaldas, varios perros) pueden fallar.
+* **Siguiente paso real:** entrenar con el StanfordExtra completo (≈ 12 000 imágenes, se solicita a los autores en
+  [benjiebob/StanfordExtra](https://github.com/benjiebob/StanfordExtra)): basta apuntar `JSON_PATH` del cuaderno al
+  JSON completo y ejecutarlo en Colab con GPU.
 
-| # | Cambio | Por qué |
-|---|---|---|
-| 1 | **Descongelar el último bloque** de MobileNetV2 | Con el backbone 100 % congelado, 5 épocas y `lr = 1e-4`, la cabeza de regresión apenas se mueve y la red se queda en "predecir el promedio" |
-| 2 | **Volteo horizontal con permutación izquierda/derecha** | `iaa.Fliplr(0.3)` voltea la imagen pero no las etiquetas: el 30 % de los datos de aumento quedaba mal etiquetado (una pata izquierda renombrada como derecha) |
-| 3 | **Pérdida enmascarada por visibilidad** | La muestra de StanfordExtra **nunca** anota los puntos 20-23 (ojos, cruz, garganta). El cuaderno los entrena como si estuvieran en `(0,0)`, y ese error arrastraba el contorno hacia la esquina de la imagen |
-| 4 | **Cabeza multi-tarea: 48 coordenadas + 24 visibilidades** | Permite que la app sepa qué puntos no se ven en una foto concreta y calcule el contorno solo con los visibles |
+## 📚 Créditos
 
-Bonus de rendimiento: las activaciones de la parte congelada se calculan **una sola vez** y
-se reutilizan (`feat_extractor.predict`), así que entrenar 160 épocas tarda ~3 min en CPU en
-lugar de ~1 h.
-
----
-
-## 🖌️ Cómo se dibuja el "borde"
-
-El modelo **no** hace segmentación; predice puntos. El contorno azul de la app es:
-
-1. **Envolvente convexa** de los puntos que el modelo considera visibles (*monotone chain*).
-2. **Suavizado de Chaikin** (3 iteraciones) para redondear las esquinas.
-3. Dibujo con **supermuestreo ×3**, relleno translúcido y halo difuminado → bordes limpios
-   sin necesidad de OpenCV.
-
-Si un punto está mal, la envolvente se abre; por eso se excluyen los 4 puntos sin anotación
-en el dataset y los que el modelo marca como no visibles (se dibujan como anillos tenues).
-
----
-
-## ⚙️ CPU vs GPU
-
-- **TensorFlow en Windows nativo no usa GPU** (limitación de TF ≥ 2.11: solo WSL2 o el
-  complemento DirectML). El propio cuaderno lo advierte.
-- Para este trabajo la **CPU alcanza**: 25 imágenes, 1,78 M parámetros entrenables y 160
-  épocas sobre características cacheadas → **~3 minutos**.
-- La **GPU RTX 4060** queda disponible para reentrenar con el dataset completo (12.000
-  imágenes) o probar otras arquitecturas.
-
----
-
-## ⚠️ Limitaciones
-
-- **25 imágenes de muestra.** El modelo acierta en perros parecidos a los de la muestra, pero
-  no es un detector de producción. El dataset completo de StanfordExtra tiene 12.000
-  imágenes y se solicita por formulario a los autores.
-- **Métricas optimistas.** Las cifras se midieron sobre las mismas 25 imágenes usadas para
-  entrenar (no hay conjunto de prueba independiente).
-- El contorno es una **estimación geométrica**, no una máscara de segmentación real.
-
-### Siguientes pasos
-
-- Dataset completo + `EarlyStopping` / `ReduceLROnPlateau`.
-- *Fine-tuning* de más bloques del backbone y aumento más agresivo.
-- Probar `EfficientNetB0`, `MobileNetV3` o un `Keypoint R-CNN`.
-- Si se quiere un borde exacto: usar el campo `seg` del dataset (máscara RLE) y entrenar
-  segmentación, o una red de dos cabezas (keypoints + máscara).
-
----
-
-## 📚 Créditos y recursos
-
-- **Dataset:** [StanfordExtra](https://github.com/benjiebob/StanfordExtra) — Benjamin Biggs
-  et al., *Who Left the Dogs Out? 3D Animal Reconstruction with Expectation Maximization in
-  the Loop* (ECCV 2020).
-- **Cuaderno base:** *Detección de Puntos Clave con Aprendizaje por Transferencia*, Alfredo
-  Díaz Claro (adaptación al español del trabajo de Sayak Paul y Muhammad Anas Raza).
-- `imgaug`: [documentación](https://imgaug.readthedocs.io/)
-- Transfer learning: [guía de Keras](https://keras.io/guides/transfer_learning/)
-- MobileNetV2: [arXiv:1801.04381](https://arxiv.org/abs/1801.04381)
-
-*Herramientas: Keras 3 · TensorFlow 2.20 · Streamlit 1.51 · Python 3.13 · NVIDIA RTX 4060.*
+* **Dataset:** [StanfordExtra](https://github.com/benjiebob/StanfordExtra) — B. Biggs et al., *Who Left the Dogs Out?
+  3D Animal Reconstruction with Expectation Maximization in the Loop* (ECCV 2020). Imágenes del
+  [Stanford Dogs Dataset](http://vision.stanford.edu/aditya86/ImageNetDogs/). Licencia propia (uso académico).
+* **Modelo base:** MobileNetV2 (Sandler et al., 2018) vía `keras.applications`.
+* **Idea del cuaderno:** *Detección de puntos clave con aprendizaje por transferencia* (Alfredo Díaz Claro, sobre el
+  trabajo de Sayak Paul y Muhammad Anas Raza).

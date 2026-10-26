@@ -18,10 +18,11 @@ Contenido:
 import os
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageOps
 
 IMG_SIZE = 224
 NUM_PUNTOS = 24
+UMBRAL_PICO = 0.19            # pico del mapa de calor a partir del cual un punto cuenta como visible
 SUPER = 3                      # factor de supermuestreo para anti-aliasing
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -98,34 +99,48 @@ for _a, _v in [("bool", bool), ("int", int), ("float", float), ("complex", compl
 # Modelo e inferencia
 # --------------------------------------------------------------------------- #
 def cargar_modelo(ruta=None):
-    """Carga el modelo Keras entrenado."""
+    """Carga el modelo Keras entrenado (sin la pérdida de entrenamiento)."""
     import keras
 
-    return keras.models.load_model(ruta or MODEL_PATH)
+    return keras.models.load_model(ruta or MODEL_PATH, compile=False)
 
 
-def predecir(model, imagen: Image.Image, umbral=0.5):
+def _decodificar(mapas):
+    """(56, 56, 24) mapas de calor -> kps (24, 2) en [0, 1] y pico (24,).
+
+    La posición es el centroide ponderado alrededor del máximo (precisión sub-celda).
+    """
+    h_, w_, n = mapas.shape
+    kps = np.zeros((n, 2), dtype="float32")
+    pico = np.zeros(n, dtype="float32")
+    for j in range(n):
+        h = mapas[:, :, j]
+        r, c = np.unravel_index(h.argmax(), h.shape)
+        pico[j] = h[r, c]
+        r0, r1, c0, c1 = max(r - 2, 0), min(r + 3, h_), max(c - 2, 0), min(c + 3, w_)
+        w = np.clip(h[r0:r1, c0:c1], 0, None) + 1e-9
+        yy, xx = np.mgrid[r0:r1, c0:c1]
+        kps[j] = [((xx * w).sum() / w.sum() + 0.5) / w_, ((yy * w).sum() / w.sum() + 0.5) / h_]
+    return kps, pico
+
+
+def predecir(model, imagen: Image.Image):
     """
     Imagen PIL (cualquier tamaño) -> (kps, vis)
 
       kps : (24, 2) coordenadas normalizadas [0, 1]
-      vis : (24,)  probabilidad de que el punto sea visible (0..1)
+      vis : (24,)  confianza de que el punto se vea (0..1; >= 0.5 = visible)
 
-    El modelo actual devuelve 72 valores (48 coordenadas + 24 visibilidades); si se
-    carga un modelo antiguo de 48 valores, se asume visibilidad = 1.
+    El modelo devuelve 24 mapas de calor de 56×56. La confianza sale de la altura del
+    pico de cada mapa, reescalada para que el umbral calibrado por validación cruzada
+    (UMBRAL_PICO) corresponda a 0.5.
     """
-    img = imagen.convert("RGB").resize((IMG_SIZE, IMG_SIZE), Image.BILINEAR)
+    img = ImageOps.exif_transpose(imagen).convert("RGB").resize((IMG_SIZE, IMG_SIZE), Image.BILINEAR)
     arr = np.asarray(img, dtype=np.uint8)[None, ...]
-    raw = np.asarray(model.predict(arr, verbose=0)).reshape(-1)
-
-    if raw.size >= NUM_PUNTOS * 3:                       # 72 -> coords + visibilidad
-        kps = raw[:NUM_PUNTOS * 2].reshape(NUM_PUNTOS, 2)
-        vis = raw[NUM_PUNTOS * 2:NUM_PUNTOS * 3]
-    else:                                                # 48 -> solo coordenadas
-        kps = raw[:NUM_PUNTOS * 2].reshape(NUM_PUNTOS, 2)
-        vis = np.ones(NUM_PUNTOS, dtype="float32")
-
-    return np.clip(kps, 0.0, 1.0), np.asarray(vis, dtype="float32")
+    mapas = np.asarray(model.predict(arr, verbose=0))[0]
+    kps, pico = _decodificar(mapas)
+    vis = np.clip(pico / (2 * UMBRAL_PICO), 0.0, 1.0)
+    return np.clip(kps, 0.0, 1.0), vis.astype("float32")
 
 
 # --------------------------------------------------------------------------- #

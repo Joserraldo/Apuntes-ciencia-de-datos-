@@ -7,7 +7,9 @@ Uso:
 
 Qué hace:
   1. Carga `modelos/modelo_puntos_clave.keras`.
-  2. Predice sobre las 25 imágenes de muestra de StanfordExtra y calcula:
+  2. Predice sobre las 25 imágenes de muestra de StanfordExtra (las mismas con que se
+     entrenó: sirve para las figuras, NO mide generalización; el error real sale de la
+     validación cruzada de `entrenar_modelo.py`) y calcula:
        · dispersión del esqueleto (qué tanto se separan los 24 puntos),
        · error medio vs. la anotación real, en % de la imagen,
        · aciertos por debajo de 0,10 (10 % de la imagen).
@@ -46,10 +48,10 @@ def anotar(imagen, kps, vis=None, contorno=True):
     return dibujar(imagen, kps, vis=vis, contorno=contorno, grosor=3, tam_punto=1.0)
 
 
-def contacto(celdas, columnas, ancho_celda=420, titulo=""):
+def contacto(celdas, columnas, ancho_celda=420, titulo="", proporcion=0.78):
     """Compone una hoja de contacto con PIL (sin matplotlib)."""
     filas = int(np.ceil(len(celdas) / columnas))
-    alto_celda = int(ancho_celda * 0.78)
+    alto_celda = int(ancho_celda * proporcion)
     margen, pie = 14, 34
     W = columnas * ancho_celda + (columnas + 1) * margen
     H = filas * (alto_celda + pie) + (filas + 1) * margen + (46 if titulo else 0)
@@ -124,7 +126,8 @@ def main():
 
     errores = np.array(errores)
     dispersiones = np.array(dispersiones)
-    print("\n=== RESUMEN ===")
+    print("\n=== RESUMEN (imágenes de ENTRENAMIENTO: es un techo, no el error real) ===")
+    print("El error en imágenes no vistas está en resultados/validacion_cruzada.json")
     print(f"Error medio (puntos visibles): {errores.mean():.2f} % de la imagen")
     print(f"Acierto de visibilidad:        {100 * np.mean(acc_vis):.1f} % de los 20 puntos anotados")
     print(f"Error mediano:                 {np.median(errores):.2f} %")
@@ -133,16 +136,19 @@ def main():
     print("   (si es < 1 % los 24 puntos se están dibujando en el mismo sitio)")
 
     hoja = contacto(celdas_pred, columnas=5, ancho_celda=360,
-                    titulo="Predicciones sobre la muestra de StanfordExtra (25 imágenes)")
+                    titulo="Predicciones sobre las 25 imágenes de entrenamiento (no es validación)")
     p1 = os.path.join(SALIDA, "figura_predicciones.png")
     hoja.save(p1)
 
     hoja2 = contacto(celdas_cmp, columnas=1, ancho_celda=1200,
-                     titulo="Original | Predicción | Anotación real")
+                     titulo="Original | Predicción | Anotación real (imágenes de entrenamiento)",
+                     proporcion=0.36)
     p2 = os.path.join(SALIDA, "figura_comparacion.png")
     hoja2.save(p2)
 
     with open(os.path.join(SALIDA, "metricas.txt"), "w", encoding="utf-8") as f:
+        f.write("# Error sobre imagenes de ENTRENAMIENTO (referencia). El error real "
+                "(imagenes no vistas) esta en validacion_cruzada.json\n")
         f.write("imagen,error_pct,dispersion_pct\n")
         for nombre, err, disp in filas:
             f.write(f"{nombre},{err:.3f},{disp:.3f}\n")

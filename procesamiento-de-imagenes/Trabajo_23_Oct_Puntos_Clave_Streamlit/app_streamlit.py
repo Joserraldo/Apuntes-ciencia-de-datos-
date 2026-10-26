@@ -8,9 +8,10 @@ Asignatura: Ciencia de Datos · Procesamiento de Imágenes (avanzado)
 
 Qué hace
 --------
-1. Carga el modelo Keras (MobileNetV2 + regresión) entrenado en el cuaderno
+1. Carga el modelo Keras (MobileNetV2 + mapas de calor) entrenado en el cuaderno
    `Avanzada_Cuaderno_9D_Deteccion_puntos_clave2.ipynb`.
-2. Predice 24 puntos anatómicos del perro: 48 coordenadas + 24 visibilidades.
+2. Predice 24 puntos anatómicos del perro: un mapa de calor por punto, de donde
+   salen las coordenadas y la confianza de visibilidad.
 3. Dibuja los puntos **y un contorno azul** que bordea al perro: la envolvente
    suavizada de los puntos visibles.
 4. Muestra las coordenadas en píxeles y normalizadas, con descarga en CSV/PNG.
@@ -28,7 +29,7 @@ import os
 import numpy as np
 import pandas as pd
 import streamlit as st
-from PIL import Image
+from PIL import Image, ImageOps
 
 from puntos_clave import (COLORES, IMG_SIZE, MODEL_PATH, NOMBRES, NUM_PUNTOS,
                           SUPERVISADOS, cargar_modelo, dibujar, predecir)
@@ -91,14 +92,14 @@ st.markdown(
     """
     <div class="hero">
       <h1>🐕 Detector de puntos clave en perros</h1>
-      <p>Aprendizaje por transferencia con <b>MobileNetV2</b> + una cabeza de regresión que localiza
+      <p>Aprendizaje por transferencia con <b>MobileNetV2</b> + una cabeza de mapas de calor que localiza
       <b>24 puntos anatómicos</b> sobre la imagen de un perro. El contorno azul es la envolvente
       suavizada de los puntos visibles: la silueta que bordea al animal.</p>
       <div class="chips">
         <span class="chip">📅 Trabajo — viernes 23 de octubre</span>
         <span class="chip">📚 StanfordExtra · 24 keypoints</span>
-        <span class="chip">🧠 MobileNetV2 + 2 SeparableConv2D</span>
-        <span class="chip">🎯 72 salidas · 48 coordenadas + 24 visibilidades</span>
+        <span class="chip">🧠 MobileNetV2 + mapas de calor</span>
+        <span class="chip">🎯 24 mapas de calor de 56×56</span>
       </div>
     </div>
     """,
@@ -119,7 +120,7 @@ with st.sidebar:
         up = st.file_uploader("Sube una foto de un perro (JPG/PNG)",
                               type=["jpg", "jpeg", "png"])
         if up is not None:
-            imagen = Image.open(io.BytesIO(up.read())).convert("RGB")
+            imagen = ImageOps.exif_transpose(Image.open(io.BytesIO(up.read()))).convert("RGB")
             nombre_imagen = up.name
     else:
         muestras = []
@@ -142,15 +143,17 @@ with st.sidebar:
 
     st.markdown("---")
     st.caption(
-        "**Modelo:** MobileNetV2 (ImageNet) + regresión, entrenado con la muestra "
+        "**Modelo:** MobileNetV2 (ImageNet) + mapas de calor, entrenado con la muestra "
         "pública de StanfordExtra (25 imágenes)."
     )
     with st.expander("ℹ️ Sobre la precisión"):
         st.markdown(
             "Es una **demostración del pipeline** completo: transferencia de aprendizaje → "
-            "regresión de coordenadas → despliegue. Con 25 imágenes de muestra los puntos son "
-            "aproximados; entrenar con el dataset completo (12.000 imágenes) o con más épocas "
-            "mejora el resultado."
+            "localización por mapas de calor → despliegue. En validación cruzada (imágenes que el "
+            "modelo no vio) el error medio es **8,7 %** del tamaño de la imagen, frente a 19,1 % de "
+            "predecir siempre la pose media. Con solo 25 imágenes de 4 razas los puntos son "
+            "aproximados y fallan en perros muy distintos; entrenar con el dataset completo "
+            "(12.000 imágenes) mejora el resultado."
         )
 
 # --------------------------------------------------------------------------- #
@@ -200,7 +203,7 @@ with st.container(border=True):
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Puntos localizados", f"{int(visibles.sum())} de {len(SUPERVISADOS)}",
               help="De los 20 puntos que StanfordExtra anota; los otros 4 no tienen etiqueta en el dataset.")
-    m2.metric("Coordenadas predichas", f"{NUM_PUNTOS * 2}", help="24 puntos × (x, y)")
+    m2.metric("Mapas de calor", f"{NUM_PUNTOS}", help="Uno por punto, de 56×56")
     m3.metric("Resolución de análisis", f"{IMG_SIZE}×{IMG_SIZE}", help="Entrada de MobileNetV2")
     m4.metric("Dispersión del esqueleto", f"{dists.mean():.1f} %",
               help="Qué tanto se separan los puntos entre sí. Cerca de 0 % = todos en el mismo píxel.")
@@ -242,14 +245,15 @@ entrenamiento) y se mantiene en `uint8`: el modelo aplica por dentro el
 ImageNet) convierte la imagen en un mapa de características de `7×7×1280`. No se
 entrena desde cero: se reutiliza lo que la red ya sabe de las imágenes.
 
-**3. Regresión de coordenadas + visibilidad.** Dos `SeparableConv2D` reducen
-`7×7 → 3×3 → 1×1` y devuelven **72 números**: 48 coordenadas (24 puntos × x/y) y
-**24 visibilidades**. La activación `sigmoid` garantiza salidas en `[0, 1]`.
+**3. Mapas de calor.** Tres deconvoluciones llevan `7×7 → 14×14 → 28×28 → 56×56` y
+devuelven **24 mapas de calor**, uno por punto. La posición del punto es el pico del
+mapa (refinado con un centroide local) y la **altura del pico** es la confianza: si es
+baja, el punto no se ve en la foto.
 
-La visibilidad es clave en este dataset: hay puntos que la muestra de StanfordExtra
-**nunca anota** (ojos, cruz y garganta, que solo existen en el subconjunto
-Animal-Pose) y otros que simplemente quedan ocultos en una foto concreta. Sin esa
-señal, la red los empujaba a la esquina `(0, 0)` y el contorno salía torcido.
+Esto importa en este dataset: hay puntos que la muestra de StanfordExtra **nunca
+anota** (ojos, cruz y garganta, que solo existen en el subconjunto Animal-Pose) y
+otros que quedan ocultos en una foto concreta. Sus mapas son planos y la app los
+dibuja como anillos tenues, fuera del contorno.
 
 **4. Despliegue.** Multiplicando por el ancho y el alto originales se recuperan las
 coordenadas en píxeles; con ellas se dibujan los puntos y la envolvente suavizada
@@ -267,9 +271,9 @@ coordenadas en píxeles; con ellas se dibujan los puntos y la envolvente suaviza
 <table class="ficha">
 <tr><td>Entrada</td><td>224 × 224 × 3 · RGB · uint8</td></tr>
 <tr><td>Backbone</td><td>MobileNetV2 · ImageNet</td></tr>
-<tr><td>Cabeza</td><td>Dropout 0.3 → SeparableConv2D 72 (5×5, ReLU) → SeparableConv2D 72 (3×3, Sigmoid)</td></tr>
-<tr><td>Salida</td><td>1 × 1 × 72 → 48 coordenadas + 24 visibilidades</td></tr>
-<tr><td>Pérdida</td><td>MSE enmascarado + entropía cruzada binaria</td></tr>
+<tr><td>Cabeza</td><td>3 × (Conv2DTranspose 128 · BatchNorm · ReLU) → Conv2D 1×1 (24)</td></tr>
+<tr><td>Salida</td><td>56 × 56 × 24 mapas de calor → 24 puntos + confianza</td></tr>
+<tr><td>Pérdida</td><td>MSE de mapas de calor, pico ponderado y puntos sin anotar enmascarados</td></tr>
 <tr><td>Datos</td><td>StanfordExtra · muestra de 25 imágenes</td></tr>
 <tr><td>Formato</td><td>Keras 3 (.keras)</td></tr>
 </table>
@@ -277,7 +281,7 @@ coordenadas en píxeles; con ellas se dibujan los puntos y la envolvente suaviza
             unsafe_allow_html=True,
         )
         st.markdown("---")
-        st.metric("Parámetros totales", "2.354.256", help="Backbone congelado + cabeza de regresión")
+        st.metric("Parámetros totales", f"{modelo.count_params():,}".replace(",", "."), help="Backbone MobileNetV2 + cabeza de mapas de calor")
 
 with tab_leyenda:
     st.markdown("#### Los 24 puntos clave (StanfordExtra)")

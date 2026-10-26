@@ -1,0 +1,16 @@
+{
+  "error_no_vistas_pct": 8.718895149230956,
+  "error_por_pliegue_pct": [
+    10.708,
+    7.651,
+    7.964,
+    10.331,
+    6.941
+  ],
+  "baseline_pose_media_pct": 19.124715423583986,
+  "umbral_pico_visibilidad": 0.19,
+  "acierto_visibilidad_pct": 77.0,
+  "pliegues": 5,
+  "epocas": 50,
+  "variantes_por_imagen": 40
+}
