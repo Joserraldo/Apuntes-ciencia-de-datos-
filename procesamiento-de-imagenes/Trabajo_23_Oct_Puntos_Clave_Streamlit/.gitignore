@@ -1,0 +1,13 @@
+# Dataset de StanfordExtra descargado por el cuaderno (pesado, no se versiona)
+StanfordExtra-master/
+StanfordExtra_repo.zip
+stanfordextra_v12.zip
+
+# Caché de Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Salidas de test_prediccion.py (se regeneran)
+resultados/muestra_*.jpg
+resultados/muestra_*.png

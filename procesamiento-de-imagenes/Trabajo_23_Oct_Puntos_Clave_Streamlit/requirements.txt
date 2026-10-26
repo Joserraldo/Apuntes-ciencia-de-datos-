@@ -1,0 +1,13 @@
+# --- App Streamlit (ejecución) ---
+tensorflow>=2.11
+keras>=3
+streamlit>=1.40
+pillow
+numpy
+pandas
+
+# --- Solo necesario si quieres REPRODUCIR el entrenamiento desde cero
+#     (el cuaderno instala imgaug en una celda; sirve con NumPy 2.x gracias al parche del cuaderno)
+# imgaug==0.4.0
+# scikit-learn
+# matplotlib
